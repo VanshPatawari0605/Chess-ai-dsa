@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Chess — Minimax + Alpha-Beta Pruning</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#0d0d0d; --panel:#141414; --border:#222;
+  --light-sq:#f0d9b5; --dark-sq:#b58863;
+  --select:#f6f669; --legal:rgba(0,0,0,0.25);
+  --last-from:rgba(155,199,0,0.4); --last-to:rgba(155,199,0,0.55);
+  --check:rgba(220,30,30,0.65); --white-text:#f5f0e8;
+  --accent:#c9a84c; --accent2:#8b5e3c;
+  --font-title:'Playfair Display',serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+body { background:var(--bg); color:var(--white-text); font-family:var(--font-mono); min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:24px 16px 48px; }
+header { text-align:center; margin-bottom:28px; }
+header h1 { font-family:var(--font-title); font-size:clamp(28px,5vw,46px); letter-spacing:-0.02em; background:linear-gradient(135deg,#f5e6c8 30%,var(--accent) 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+header p { margin-top:6px; color:#666; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; }
+.app { display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap; justify-content:center; width:100%; max-width:960px; }
+#board { --sq:clamp(52px,10vw,76px); display:grid; grid-template-columns:repeat(8,var(--sq)); grid-template-rows:repeat(8,var(--sq)); border:2px solid #2a2a2a; box-shadow:0 0 0 1px #333,0 24px 64px rgba(0,0,0,0.7),0 0 0 8px #111; }
+.sq { width:var(--sq); height:var(--sq); display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; font-size:calc(var(--sq)*0.72); line-height:1; user-select:none; transition:filter 0.1s; }
+.sq.light { background:var(--light-sq); }
+.sq.dark  { background:var(--dark-sq); }
+.sq.selected  { background:var(--select) !important; }
+.sq.last-from { background:var(--last-from) !important; }
+.sq.last-to   { background:var(--last-to) !important; }
+.sq.in-check  { background:var(--check) !important; }
+.sq.legal-move::after { content:''; position:absolute; width:30%; height:30%; border-radius:50%; background:rgba(0,0,0,0.22); pointer-events:none; }
+.sq.legal-capture::after { content:''; position:absolute; width:92%; height:92%; border-radius:50%; border:6px solid rgba(0,0,0,0.22); background:transparent; pointer-events:none; }
+.sq:hover:not(.selected) { filter:brightness(1.08); }
+.piece { pointer-events:none; text-shadow:0 2px 6px rgba(0,0,0,0.3); line-height:1; }
+.panel { width:260px; display:flex; flex-direction:column; gap:16px; }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:18px; }
+.card h3 { font-family:var(--font-title); font-size:14px; color:var(--accent); margin-bottom:12px; letter-spacing:0.04em; text-transform:uppercase; }
+#status-text { font-size:13px; line-height:1.6; color:#aaa; }
+#status-text .highlight { color:var(--white-text); font-weight:600; }
+#status-text .turn-white { color:#f5e6c8; }
+#status-text .turn-black { color:#888; }
+.controls { display:flex; flex-direction:column; gap:10px; }
+.control-row { display:flex; align-items:center; justify-content:space-between; font-size:11px; color:#666; }
+.control-row label { color:#888; }
+.control-row select { background:#1c1c1c; border:1px solid #333; color:var(--white-text); border-radius:4px; padding:3px 6px; font-family:var(--font-mono); font-size:11px; cursor:pointer; }
+.btn { background:linear-gradient(135deg,var(--accent2),var(--accent)); border:none; border-radius:6px; color:#1a1004; font-family:var(--font-title); font-size:13px; font-weight:700; padding:10px 16px; cursor:pointer; letter-spacing:0.04em; transition:opacity 0.15s,transform 0.1s; }
+.btn:hover { opacity:0.9; transform:translateY(-1px); }
+.btn.secondary { background:#1c1c1c; border:1px solid #333; color:#888; font-family:var(--font-mono); font-size:11px; }
+#move-log { max-height:200px; overflow-y:auto; font-size:11px; color:#666; line-height:1.8; scrollbar-width:thin; scrollbar-color:#333 transparent; }
+.log-move { display:flex; gap:6px; }
+.log-num { color:#444; min-width:22px; }
+.log-w { color:#c8b897; }
+.log-b { color:#888; }
+.dsa-stat { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #1a1a1a; font-size:11px; }
+.dsa-stat .val { color:var(--accent); font-weight:600; }
+#overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.82); z-index:100; align-items:center; justify-content:center; }
+#overlay.show { display:flex; }
+.overlay-box { background:#111; border:1px solid var(--accent); border-radius:14px; padding:40px; text-align:center; max-width:360px; }
+.overlay-box h2 { font-family:var(--font-title); font-size:32px; margin-bottom:10px; color:var(--accent); }
+.overlay-box p { color:#888; margin-bottom:24px; font-size:13px; }
+#promo-picker { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center; }
+#promo-picker.show { display:flex; }
+.promo-box { background:#111; border:1px solid #333; border-radius:10px; padding:24px; text-align:center; }
+.promo-box h3 { font-family:var(--font-title); color:var(--accent); margin-bottom:16px; }
+.promo-pieces { display:flex; gap:12px; justify-content:center; }
+.promo-sq { width:64px; height:64px; font-size:48px; background:#1c1c1c; border:1px solid #333; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s; }
+.promo-sq:hover { background:#2a2a2a; }
+@media(max-width:700px){ .panel{ width:100%; max-width:500px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>♟ Chess Engine</h1>
+  <p>Minimax + Alpha-Beta Pruning &nbsp;·&nbsp; DSA Project</p>
+</header>
+<div class="app">
+  <div id="board"></div>
+  <div class="panel">
+    <div class="card">
+      <h3>Game Status</h3>
+      <div id="status-text">White to move</div>
+    </div>
+    <div class="card">
+      <h3>Controls</h3>
+      <div class="controls">
+        <div class="control-row">
+          <label>Play as</label>
+          <select id="player-color"><option value="white">White</option><option value="black">Black</option></select>
+        </div>
+        <div class="control-row">
+          <label>AI Depth</label>
+          <select id="ai-depth">
+            <option value="1">1 — Instant</option>
+            <option value="2" selected>2 — Fast</option>
+            <option value="3">3 — Normal</option>
+            <option value="4">4 — Strong</option>
+          </select>
+        </div>
+        <button class="btn" onclick="newGame()">New Game</button>
+        <button class="btn secondary" onclick="undoMove()">↩ Undo Move</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>DSA Info</h3>
+      <div class="dsa-stat"><span>Algorithm</span><span class="val">Minimax + α-β</span></div>
+      <div class="dsa-stat"><span>Nodes Searched</span><span class="val" id="stat-nodes">—</span></div>
+      <div class="dsa-stat"><span>AI Think Time</span><span class="val" id="stat-time">—</span></div>
+      <div class="dsa-stat"><span>Depth</span><span class="val" id="stat-depth">—</span></div>
+      <div class="dsa-stat"><span>Eval Score</span><span class="val" id="stat-eval">—</span></div>
+      <div style="margin-top:10px;font-size:10px;color:#444;line-height:1.6;">
+        α-β prunes branches where <code style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:3px;padding:1px 4px;color:var(--accent)">α ≥ β</code><br/>
+        Reduces O(b^d) → O(b^(d/2))
+      </div>
+    </div>
+    <div class="card">
+      <h3>Move Log</h3>
+      <div id="move-log"><span style="color:#333">No moves yet</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="overlay-box">
+    <h2 id="overlay-title">Checkmate!</h2>
+    <p id="overlay-msg"></p>
+    <button class="btn" onclick="newGame()">Play Again</button>
+  </div>
+</div>
+<div id="promo-picker">
+  <div class="promo-box">
+    <h3>Promote Pawn</h3>
+    <div class="promo-pieces" id="promo-pieces"></div>
+  </div>
+</div>
+
+<script src="chess.js"></script>
+</body>
+</html>
